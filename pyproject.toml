@@ -1,0 +1,22 @@
+[project]
+name = "llm"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+authors = [
+    { name = "Jon Goikoetxea", email = "jon.goikoetxea.m@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+llm = "llm:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.2.0",
+]
