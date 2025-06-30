@@ -20,7 +20,7 @@ class Tokenizer(ABC):
 
     def __init__(self, vocab_size: int, special_tokens: list[str]) -> None:
         self.vocab_size = vocab_size
-        self.special_tokens = special_tokens
+        self.special_tokens = list(reversed(sorted(special_tokens, key=len)))
 
     @abstractmethod
     def train_on_corpus(self, corpus_path: str | os.PathLike) -> None:
