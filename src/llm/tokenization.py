@@ -54,6 +54,8 @@ class BPETokenizer(Tokenizer):
     pre_tokenization_regex: str
     vocabulary: dict[int, bytes]
     merges: list[tuple[bytes, bytes]]
+    _ranked_merges_dict: dict[tuple[bytes, bytes], int] | None = None
+    _inverse_vocabulary: dict[bytes, int] | None = None
 
     def __init__(
         self, vocab_size: int, special_tokens: list[str], pre_tokenization_regex: str
@@ -208,34 +210,30 @@ class BPETokenizer(Tokenizer):
         return counts
 
     def encode(self, text: str) -> list[int]:
+        self._store_ranked_merges_dict_and_inverse_vocab()
+        assert self._inverse_vocabulary is not None
         pre_tokens = self._encode_pre_tokenize(text)
         token_bytes = [
             [byte.to_bytes() for byte in pre_token] for pre_token in pre_tokens
         ]
-        special_tokens = [token.encode("utf-8") for token in self.special_tokens]
-
-        def apply_merge(token: list[bytes], merge: tuple[bytes, bytes]) -> None:
-            if bytes().join(token) in special_tokens:
-                return
-            i = 0
-            while i < len(token) - 1:
-                if (token[i], token[i + 1]) == merge:
-                    token[i] = bytes().join(merge)
-                    del token[i + 1]
-                i += 1
-
-        for merge in self.merges:
-            for token_group in token_bytes:
-                apply_merge(token_group, merge)
-        bytes_to_token_id = {v: k for k, v in self.vocabulary.items()}
         token_ids = []
-        for token_group in token_bytes:
-            full_token = bytes().join(token_group)
-            if full_token in special_tokens:
-                token_ids.append(bytes_to_token_id[full_token])
+        special_tokens = [token.encode("utf-8") for token in self.special_tokens]
+        for pre_token in token_bytes:
+            full_pre_token = bytes().join(pre_token)
+            if full_pre_token in special_tokens:
+                token_ids.append(self._inverse_vocabulary[full_pre_token])
             else:
-                token_ids += [bytes_to_token_id[token] for token in token_group]
+                token_ids += [
+                    self._inverse_vocabulary[token]
+                    for token in self._encode_apply_merges(pre_token)
+                ]
         return token_ids
+
+    def _store_ranked_merges_dict_and_inverse_vocab(self) -> None:
+        if self._ranked_merges_dict is None:
+            self._ranked_merges_dict = {merge: i for i, merge in enumerate(self.merges)}
+        if self._inverse_vocabulary is None:
+            self._inverse_vocabulary = {v: k for k, v in self.vocabulary.items()}
 
     def _encode_pre_tokenize(self, text: str) -> list[bytes]:
         # The regex is in capturing parentheses to keep special tokens in the list
@@ -258,6 +256,29 @@ class BPETokenizer(Tokenizer):
                 ):
                     pre_tokens.append(match.group())
         return pre_tokens
+
+    def _encode_apply_merges(
+        self,
+        pre_token_orig: list[bytes],
+    ) -> list[bytes]:
+        pre_token = pre_token_orig.copy()
+        assert self._ranked_merges_dict is not None
+        while True:
+            merge_position = 0
+            best_rank = len(self.merges)
+            for i in range(len(pre_token) - 1):
+                pair = pre_token[i], pre_token[i + 1]
+                if (
+                    pair in self._ranked_merges_dict
+                    and self._ranked_merges_dict[pair] < best_rank
+                ):
+                    best_rank = self._ranked_merges_dict[pair]
+                    merge_position = i
+            if best_rank == len(self.merges):
+                break
+            pre_token[merge_position] += pre_token[merge_position + 1]
+            del pre_token[merge_position + 1]
+        return pre_token
 
     def decode(self, token_ids: list[int]) -> str:
         return (
