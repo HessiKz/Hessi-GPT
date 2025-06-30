@@ -41,9 +41,9 @@ class Tokenizer(ABC):
     def encode(self, text: str) -> list[int]:
         pass
 
-    @abstractmethod
-    def encode_iterable(self, iterable: Iterable[str]) -> Iterator:
-        pass
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        for string in iterable:
+            yield from self.encode(string)
 
     @abstractmethod
     def decode(self, token_ids: list[int]) -> str:
@@ -79,8 +79,6 @@ class BPETokenizer(Tokenizer):
             pre_tokenize = functools.partial(
                 self._pre_tokenize_chunk,
                 input_path=corpus_path,
-                pre_tokenizer_regex=self.pre_tokenization_regex.encode("utf-8"),
-                special_tokens=self.special_tokens,
             )
             for chunk_counts in pool.map(
                 pre_tokenize,
@@ -186,12 +184,10 @@ class BPETokenizer(Tokenizer):
         # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
         return sorted(set(chunk_boundaries))
 
-    @staticmethod
     def _pre_tokenize_chunk(
+        self,
         chunk_limits: tuple[int, int],
         input_path: str | os.PathLike,
-        pre_tokenizer_regex: bytes,
-        special_tokens: list[str],
     ) -> dict[bytes, int]:
         start, end = chunk_limits
         chunk_size = end - start
@@ -200,20 +196,72 @@ class BPETokenizer(Tokenizer):
             chunk = fd.read(chunk_size)
         # Split on special tokens to avoid merging across document boundaries
         special_tokens_regex = "|".join(
-            re.escape(token) for token in special_tokens
+            re.escape(token) for token in self.special_tokens
         ).encode("utf-8")
         counts: dict[bytes, int] = {}
         for chunk_doc in re.split(special_tokens_regex, chunk):
-            for match in re.finditer(pre_tokenizer_regex, chunk_doc):
+            for match in re.finditer(
+                self.pre_tokenization_regex.encode("utf-8"), chunk_doc
+            ):
                 pre_token = match.group()
                 counts[pre_token] = counts.get(pre_token, 0) + 1
         return counts
 
     def encode(self, text: str) -> list[int]:
-        raise NotImplementedError
+        pre_tokens = self._encode_pre_tokenize(text)
+        token_bytes = [
+            [byte.to_bytes() for byte in pre_token] for pre_token in pre_tokens
+        ]
+        special_tokens = [token.encode("utf-8") for token in self.special_tokens]
 
-    def encode_iterable(self, iterable: Iterable[str]) -> Iterator:
-        raise NotImplementedError
+        def apply_merge(token: list[bytes], merge: tuple[bytes, bytes]) -> None:
+            if bytes().join(token) in special_tokens:
+                return
+            i = 0
+            while i < len(token) - 1:
+                if (token[i], token[i + 1]) == merge:
+                    token[i] = bytes().join(merge)
+                    del token[i + 1]
+                i += 1
+
+        for merge in self.merges:
+            for token_group in token_bytes:
+                apply_merge(token_group, merge)
+        bytes_to_token_id = {v: k for k, v in self.vocabulary.items()}
+        token_ids = []
+        for token_group in token_bytes:
+            full_token = bytes().join(token_group)
+            if full_token in special_tokens:
+                token_ids.append(bytes_to_token_id[full_token])
+            else:
+                token_ids += [bytes_to_token_id[token] for token in token_group]
+        return token_ids
+
+    def _encode_pre_tokenize(self, text: str) -> list[bytes]:
+        # The regex is in capturing parentheses to keep special tokens in the list
+        special_tokens_regex = (
+            "(" + "|".join(re.escape(token) for token in self.special_tokens) + ")"
+        ).encode("utf-8")
+        pre_tokens: list[bytes] = []
+        chunks = (
+            re.split(special_tokens_regex, text.encode("utf-8"))
+            if self.special_tokens
+            else [text.encode("utf-8")]
+        )
+        special_tokens = [token.encode("utf-8") for token in self.special_tokens]
+        for chunk in chunks:
+            if chunk in special_tokens:
+                pre_tokens.append(chunk)
+            else:
+                for match in re.finditer(
+                    self.pre_tokenization_regex.encode("utf-8"), chunk
+                ):
+                    pre_tokens.append(match.group())
+        return pre_tokens
 
     def decode(self, token_ids: list[int]) -> str:
-        raise NotImplementedError
+        return (
+            bytes()
+            .join(self.vocabulary[token_id] for token_id in token_ids)
+            .decode("utf-8", errors="replace")
+        )
