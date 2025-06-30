@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import os
+import pickle
 from abc import ABC
 from abc import abstractmethod
 from collections import Counter
@@ -25,14 +26,16 @@ class Tokenizer(ABC):
     def train_on_corpus(self, corpus_path: str | os.PathLike) -> None:
         pass
 
-    @abstractmethod
     def save_to_file(self, path: str | os.PathLike) -> None:
-        pass
+        with open(path, "wb") as fd:
+            pickle.dump(self, fd)
 
     @staticmethod
-    @abstractmethod
     def load_from_file(path: str | os.PathLike) -> Tokenizer:
-        pass
+        with open(path, "rb") as fd:
+            tokenizer = pickle.load(fd)
+        assert isinstance(tokenizer, Tokenizer)
+        return tokenizer
 
     @abstractmethod
     def encode(self, text: str) -> list[int]:
@@ -205,13 +208,6 @@ class BPETokenizer(Tokenizer):
                 pre_token = match.group()
                 counts[pre_token] = counts.get(pre_token, 0) + 1
         return counts
-
-    def save_to_file(self, path: str | os.PathLike) -> None:
-        raise NotImplementedError
-
-    @staticmethod
-    def load_from_file(path: str | os.PathLike) -> Tokenizer:
-        raise NotImplementedError
 
     def encode(self, text: str) -> list[int]:
         raise NotImplementedError
