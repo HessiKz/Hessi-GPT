@@ -12,6 +12,7 @@ from typing import Iterable
 from typing import Iterator
 
 import regex as re
+from tqdm import tqdm
 
 
 class Tokenizer(ABC):
@@ -103,7 +104,9 @@ class BPETokenizer(Tokenizer):
         for pre_token, count in freq_table.items():
             for byte_pair in zip(pre_token[:-1], pre_token[1:]):
                 byte_pair_counts[byte_pair] = byte_pair_counts.get(byte_pair, 0) + count
-        for i in range(self.vocab_size - len(self.vocabulary)):
+        for i in tqdm(
+            range(self.vocab_size - len(self.vocabulary)), desc="Training BPE tokenizer"
+        ):
             # Break ties deterministically by taking lexicographically greatest byte pair
             most_common_pair = max(
                 byte_pair_counts, key=lambda pair: (byte_pair_counts[pair], pair)
