@@ -16,6 +16,8 @@ repos:
     hooks:
       - id: mypy
         args: [--disallow-untyped-calls, --disallow-untyped-defs, --ignore-missing-imports]
+        additional_dependencies:
+          - "jaxtyping"
   - repo: https://github.com/asottile/reorder-python-imports
     rev: v3.15.0
     hooks:
