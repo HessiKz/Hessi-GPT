@@ -106,3 +106,65 @@ def _scaled_dot_product_attention(
         values,
         "queries keys, keys value_dim -> queries value_dim",
     )
+
+
+class _CausalMultiHeadSelfAttention(eqx.Module):
+    W_qkv: eqx.nn.Linear
+    W_o: eqx.nn.Linear
+    num_heads: int
+    rope: _RotaryPositionalEncoding | None
+
+    def __init__(
+        self,
+        input_dim: int,
+        num_heads: int,
+        key: jax.Array,
+        rope: _RotaryPositionalEncoding | None = None,
+    ):
+        self.num_heads = num_heads
+        qkv_key, output_key = jax.random.split(key, 2)
+        self.rope = rope
+        hidden_dim = input_dim // num_heads
+        # We calculate queries, keys and values with a single matrix multiply
+        self.W_qkv = eqx.nn.Linear(
+            in_features=input_dim,
+            out_features=3 * num_heads * hidden_dim,
+            use_bias=False,
+            key=qkv_key,
+        )
+        self.W_o = eqx.nn.Linear(
+            in_features=num_heads * hidden_dim,
+            out_features=input_dim,
+            use_bias=False,
+            key=output_key,
+        )
+
+    def __call__(
+        self,
+        x: Float[Array, "sequence input_dim"],
+        positions: Int[Array, " sequence"] | None = None,
+    ) -> Float[Array, "sequence input_dim"]:
+        seq_len = x.shape[0]
+        qkv = jax.vmap(self.W_qkv)(x)
+        queries, keys, values = rearrange(
+            qkv,
+            "sequence (qkv head hidden) -> qkv head sequence hidden",
+            qkv=3,
+            head=self.num_heads,
+        )
+        if self.rope is not None:
+            rope = jax.vmap(self.rope, in_axes=(0, None))
+            if positions is None:
+                positions = jnp.arange(seq_len)
+            queries = rope(queries, positions)
+            keys = rope(keys, positions)
+        causal_mask = jnp.tril(jnp.ones((seq_len, seq_len)))
+        attention_outputs = jax.vmap(
+            _scaled_dot_product_attention, in_axes=(0, 0, 0, None)
+        )(queries, keys, values, causal_mask)
+        outputs = jax.vmap(self.W_o)(
+            rearrange(
+                attention_outputs, "head sequence hidden -> sequence (head hidden)"
+            )
+        )
+        return outputs
