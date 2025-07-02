@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import equinox as eqx
 import jax
+import jax.numpy as jnp
+from einops import einsum
+from einops import rearrange
+from einops import repeat
 from jaxtyping import Array
 from jaxtyping import Float
+from jaxtyping import Int
 
 
 class _PositionwiseFFN(eqx.Module):
@@ -35,3 +40,42 @@ class _PositionwiseFFN(eqx.Module):
     def __call__(self, x: Float[Array, " hidden"]) -> Float[Array, " hidden"]:
         glu = jax.nn.swish(self.linear_1(x)) * self.linear_3(x)
         return self.linear_2(glu)
+
+
+# Jianlin Su, Yu Lu, Shengfeng Pan, Bo Wen, and Yunfeng Liu. Roformer: Enhanced
+# transformer with rotary position embedding, 2021.
+class _RotaryPositionalEncoding(eqx.Module):
+    theta: float
+    query_key_dim: int
+    max_sequence_len: int
+
+    def __init__(self, theta: float, query_key_dim: int, max_sequence_len: int):
+        assert query_key_dim % 2 == 0, "Query/key dimension must be even to apply RoPE"
+        self.theta = theta
+        self.query_key_dim = query_key_dim
+        self.max_sequence_len = max_sequence_len
+
+    def __call__(
+        self, x: Float[Array, "sequence query_key"], positions: Int[Array, " sequence"]
+    ) -> Float[Array, "sequence query_key"]:
+        with jax.ensure_compile_time_eval():
+            thetas = jnp.arange(self.max_sequence_len).reshape(-1, 1) / (
+                self.theta
+                ** (2 * jnp.arange(self.query_key_dim // 2) / self.query_key_dim)
+            )
+            sines, cosines = jnp.sin(thetas), jnp.cos(thetas)
+            blocks = rearrange(
+                [cosines, -sines, sines, cosines],
+                "(row column) i k -> i k row column",
+                row=2,
+                column=2,
+            )
+        rotation_blocks = rearrange(
+            blocks[positions], "sequence k row col -> sequence (k row) col"
+        )
+        x = repeat(x, "sequence (query_key n) -> sequence n (query_key m)", n=2, m=2)
+        return einsum(
+            x,
+            rotation_blocks,
+            "sequence col query_key, sequence query_key col -> sequence query_key",
+        )
