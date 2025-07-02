@@ -168,3 +168,40 @@ class _CausalMultiHeadSelfAttention(eqx.Module):
             )
         )
         return outputs
+
+
+class _TransformerBlock(eqx.Module):
+    mha: _CausalMultiHeadSelfAttention
+    ff: _PositionwiseFFN
+    pre_mha_norm: eqx.nn.RMSNorm
+    pre_ff_norm: eqx.nn.RMSNorm
+
+    def __init__(
+        self,
+        input_dim: int,
+        num_heads: int,
+        feed_forward_dim: int,
+        rope_theta: float,
+        max_sequence_len: int,
+        key: jax.Array,
+    ):
+        mha_key, ff_key = jax.random.split(key, 2)
+        rope = _RotaryPositionalEncoding(
+            theta=rope_theta,
+            max_sequence_len=max_sequence_len,
+            query_key_dim=input_dim // num_heads,
+        )
+        self.mha = _CausalMultiHeadSelfAttention(
+            input_dim, num_heads, key=mha_key, rope=rope
+        )
+        self.ff = _PositionwiseFFN(input_dim, feed_forward_dim, key=ff_key)
+        self.pre_mha_norm = eqx.nn.RMSNorm(input_dim, use_bias=False)
+        self.pre_ff_norm = eqx.nn.RMSNorm(input_dim, use_bias=False)
+
+    def __call__(
+        self,
+        x: Float[Array, "sequence input_dim"],
+    ) -> Float[Array, "sequence input_dim"]:
+        ff_input = x + self.mha(jax.vmap(self.pre_mha_norm)(x))
+        output = ff_input + jax.vmap(self.ff)(jax.vmap(self.pre_ff_norm)(ff_input))
+        return output
