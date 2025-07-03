@@ -205,3 +205,57 @@ class _TransformerBlock(eqx.Module):
         ff_input = x + self.mha(jax.vmap(self.pre_mha_norm)(x))
         output = ff_input + jax.vmap(self.ff)(jax.vmap(self.pre_ff_norm)(ff_input))
         return output
+
+
+class TransformerLanguageModel(eqx.Module):
+    embedding: eqx.nn.Embedding
+    transformer_blocks: tuple[_TransformerBlock, ...]
+    output_norm: eqx.nn.RMSNorm
+    output_projection: eqx.nn.Linear
+
+    def __init__(
+        self,
+        embedding_dim: int,
+        num_heads: int,
+        feed_forward_dim: int,
+        rope_theta: float,
+        max_sequence_len: int,
+        vocab_size: int,
+        num_transformer_blocks: int,
+        key: jax.Array,
+    ):
+        embedding_key, transformers_key, output_key = jax.random.split(key, 3)
+        self.embedding = eqx.nn.Embedding(
+            num_embeddings=vocab_size, embedding_size=embedding_dim, key=embedding_key
+        )
+        self.transformer_blocks = tuple(
+            _TransformerBlock(
+                input_dim=embedding_dim,
+                num_heads=num_heads,
+                feed_forward_dim=feed_forward_dim,
+                rope_theta=rope_theta,
+                max_sequence_len=max_sequence_len,
+                key=block_key,
+            )
+            for block_key in jax.random.split(transformers_key, num_transformer_blocks)
+        )
+        self.output_norm = eqx.nn.RMSNorm(embedding_dim, use_bias=False)
+        self.output_projection = eqx.nn.Linear(
+            in_features=embedding_dim,
+            out_features=vocab_size,
+            use_bias=False,
+            key=output_key,
+        )
+
+    def __call__(
+        self, token_ids: Int[Array, " sequence"]
+    ) -> Float[Array, " sequence vocab"]:
+        embeddings = jax.vmap(self.embedding)(token_ids)
+        for block in self.transformer_blocks:
+            embeddings = block(embeddings)
+        normalized = jax.vmap(self.output_norm)(embeddings)
+        logits: Float[Array, "sequence vocab"] = jax.vmap(self.output_projection)(
+            normalized
+        )
+        probabilities = jax.nn.softmax(logits, axis=-1)
+        return probabilities
