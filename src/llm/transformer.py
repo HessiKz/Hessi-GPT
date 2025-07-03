@@ -257,5 +257,5 @@ class TransformerLanguageModel(eqx.Module):
         logits: Float[Array, "sequence vocab"] = jax.vmap(self.output_projection)(
             normalized
         )
-        probabilities = jax.nn.softmax(logits, axis=-1)
-        return probabilities
+        logits = logits - reduce(logits, "sequence vocab -> sequence 1", "max")
+        return logits
