@@ -254,5 +254,4 @@ class TransformerLanguageModel(eqx.Module):
         logits: Float[Array, "sequence vocab"] = jax.vmap(self.output_projection)(
             normalized
         )
-        logits = logits - reduce(logits, "sequence vocab -> sequence 1", "max")
         return logits
