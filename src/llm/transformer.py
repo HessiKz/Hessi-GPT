@@ -68,17 +68,14 @@ class _RotaryPositionalEncoding(eqx.Module):
             sines, cosines = jnp.sin(thetas), jnp.cos(thetas)
             blocks = rearrange(
                 [cosines, -sines, sines, cosines],
-                "(row column) i k -> i k row column",
+                "(row column) i k -> i (k row) column",
                 row=2,
                 column=2,
             )
-        rotation_blocks = rearrange(
-            blocks[positions], "sequence k row col -> sequence (k row) col"
-        )
         x = repeat(x, "sequence (query_key n) -> sequence n (query_key m)", n=2, m=2)
         return einsum(
             x,
-            rotation_blocks,
+            blocks[positions],
             "sequence col query_key, sequence query_key col -> sequence query_key",
         )
 
