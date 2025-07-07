@@ -172,8 +172,10 @@ def train(
             inference_model = eqx.nn.inference_mode(model)
             val_losses = []
             for x, y in val_data_iter():
-                val_losses.append(loss_fn(inference_model, x, y))
-            print(f"Step {step}: validation loss {sum(val_losses) / len(val_losses)}")
+                loss = loss_fn(inference_model, x, y)
+                val_losses.append(loss * x.size)
+            mean_val_loss = sum(val_losses) / val_tokens.size
+            print(f"Step {step}: validation loss {mean_val_loss}")
 
 
 if __name__ == "__main__":
