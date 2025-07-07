@@ -15,6 +15,7 @@ dependencies = [
     "jaxtyping>=0.3.2",
     "optax>=0.2.5",
     "regex>=2024.11.6",
+    "tensorboardx>=2.6.4",
     "tqdm>=4.67.1",
 ]
 

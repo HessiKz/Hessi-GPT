@@ -16,6 +16,7 @@ from llm.tokenization import Tokenizer
 from llm.transformer import TransformerLanguageModel
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
+from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
 
@@ -164,10 +165,11 @@ def train(
             x, y = train_tokens[indices[:, :-1]], train_tokens[indices[:, 1:]]
             yield x, y
 
+    tb_writer = SummaryWriter()
     opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
     for step, (x, y) in zip(range(cfg.num_steps), train_data_iter()):
         model, opt_state, train_loss = make_train_step(model, opt_state, x, y)
-        print(f"Step {step}: train loss {train_loss}")
+        tb_writer.add_scalar("step_loss/training", train_loss, step)
         if step % cfg.eval_every_n_steps == 0:
             inference_model = eqx.nn.inference_mode(model)
             val_losses = []
@@ -175,7 +177,7 @@ def train(
                 loss = loss_fn(inference_model, x, y)
                 val_losses.append(loss * x.size)
             mean_val_loss = sum(val_losses) / val_tokens.size
-            print(f"Step {step}: validation loss {mean_val_loss}")
+            tb_writer.add_scalar("step_loss/validation", mean_val_loss, step)
 
 
 if __name__ == "__main__":
