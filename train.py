@@ -38,6 +38,7 @@ def main(cfg: DictConfig) -> None:
     del tokenizer
     random_key, model_key = jax.random.split(random_key)
     model = get_model(cfg.model, model_key)
+    print(f"Model trainable parameters: {model.num_trainable_parameters:_}")
     optimizer = get_optimizer(cfg.training.optimizer)
     train(
         model,
