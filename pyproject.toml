@@ -31,4 +31,4 @@ dev = [
 ]
 
 [tool.ruff]
-ignore = ["F722"]
+lint.ignore = ["F722"]
