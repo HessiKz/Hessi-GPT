@@ -1,8 +1,17 @@
 from pathlib import Path
+from typing import Iterator
 
+import equinox as eqx
 import hydra
 import jax
+import jax.numpy as jnp
 import numpy as np
+import optax
+from einops import reduce
+from jaxtyping import Array
+from jaxtyping import Float
+from jaxtyping import Int
+from jaxtyping import PyTree
 from llm.tokenization import Tokenizer
 from llm.transformer import TransformerLanguageModel
 from omegaconf import DictConfig
@@ -14,15 +23,31 @@ from tqdm import tqdm
 def main(cfg: DictConfig) -> None:
     random_key = jax.random.PRNGKey(cfg.random_seed)
     tokenizer = get_tokenizer(cfg.tokenization)
+    print(
+        f"Loading training token data from {cfg.tokenization.tokenized_train_set_path}"
+    )
     train_tokens = get_tokens(
         tokenizer, cfg.train_corpus_path, cfg.tokenization.tokenized_train_set_path
+    )
+    print(
+        f"Loading validation token data from {cfg.tokenization.tokenized_val_set_path}"
     )
     val_tokens = get_tokens(
         tokenizer, cfg.val_corpus_path, cfg.tokenization.tokenized_val_set_path
     )
+    del tokenizer
     random_key, model_key = jax.random.split(random_key)
     model = get_model(cfg.model, model_key)
-    del tokenizer, model, train_tokens, val_tokens
+    optimizer = get_optimizer(cfg.training.optimizer)
+    train(
+        model,
+        optimizer,
+        train_tokens,
+        val_tokens,
+        cfg.training,
+        cfg.model.max_sequence_len,
+        random_key,
+    )
 
 
 def get_tokenizer(cfg: DictConfig) -> Tokenizer:
@@ -58,6 +83,96 @@ def get_tokens(tokenizer: Tokenizer, corpus_path: str, tokens_path: str) -> np.m
 def get_model(cfg: DictConfig, random_key: jax.Array) -> TransformerLanguageModel:
     lm = TransformerLanguageModel(key=random_key, **cfg)  # type: ignore
     return lm
+
+
+def get_optimizer(cfg: DictConfig) -> optax.GradientTransformation:
+    lr_schedule = hydra.utils.instantiate(cfg.lr_schedule)
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(cfg.max_grad_norm),
+        optax.adamw(
+            learning_rate=lr_schedule,
+            b1=cfg.b1,
+            b2=cfg.b2,
+            weight_decay=cfg.weight_decay,
+            eps=cfg.eps,
+        ),
+    )
+    return optimizer
+
+
+def train(
+    model: TransformerLanguageModel,
+    optimizer: optax.GradientTransformation,
+    train_tokens: np.memmap,
+    val_tokens: np.memmap,
+    cfg: DictConfig,
+    max_sequence_len: int,
+    random_key: jax.Array,
+) -> None:
+    @eqx.filter_jit
+    def loss_fn(
+        model: TransformerLanguageModel,
+        x: Int[Array, "batch sequence"],
+        y: Int[Array, "batch sequence"],
+    ) -> Float[Array, ""]:
+        y_pred_logits = jax.vmap(model)(x)
+        # Subtract maximum logit for numerical stability
+        y_pred_logits = y_pred_logits - reduce(
+            y_pred_logits, "batch sequence vocab -> batch sequence 1", "max"
+        )
+        losses = jax.vmap(optax.losses.softmax_cross_entropy_with_integer_labels)(
+            y_pred_logits, y
+        )
+        return jnp.mean(losses)
+
+    @eqx.filter_jit
+    def make_train_step(
+        model: TransformerLanguageModel,
+        opt_state: PyTree,
+        x: Int[Array, "batch sequence"],
+        y: Int[Array, "batch sequence"],
+    ) -> tuple[TransformerLanguageModel, PyTree, Float[Array, ""]]:
+        loss, grads = eqx.filter_value_and_grad(loss_fn)(model, x, y)
+        updates, opt_state = optimizer.update(
+            grads, opt_state, eqx.filter(model, eqx.is_array)
+        )
+        model = eqx.apply_updates(model, updates)
+        return model, opt_state, loss
+
+    def train_data_iter() -> Iterator[
+        tuple[Int[Array, "batch sequence"], Int[Array, "batch sequence"]]
+    ]:
+        _, sampling_key = jax.random.split(random_key)
+        while True:
+            sampling_key, current_key = jax.random.split(sampling_key)
+            start_indices = jax.random.randint(
+                current_key, (cfg.batch_size,), 0, train_tokens.size - max_sequence_len
+            )
+            indices = jnp.arange(max_sequence_len + 1) + start_indices.reshape(-1, 1)
+            x, y = train_tokens[indices[:, :-1]], train_tokens[indices[:, 1:]]
+            yield x, y
+
+    def val_data_iter() -> Iterator[
+        tuple[Int[Array, "batch sequence"], Int[Array, "batch sequence"]]
+    ]:
+        for i in range(0, val_tokens.size, cfg.eval_batch_size * max_sequence_len):
+            start_indices = jnp.arange(
+                i, i + cfg.eval_batch_size * max_sequence_len, max_sequence_len
+            )
+            indices = jnp.arange(max_sequence_len + 1) + start_indices.reshape(-1, 1)
+            x, y = train_tokens[indices[:, :-1]], train_tokens[indices[:, 1:]]
+            yield x, y
+
+    opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
+    for step, (x, y) in zip(range(cfg.num_steps), train_data_iter()):
+        model, opt_state, train_loss = make_train_step(model, opt_state, x, y)
+        print(f"Step {step}: train loss {train_loss}")
+        if step % cfg.eval_every_n_steps == 0:
+            inference_model = eqx.nn.inference_mode(model)
+            val_losses = []
+            for x, y in val_data_iter():
+                val_losses.append(loss_fn(inference_model, x, y))
+            print(f"Step {step}: validation loss {sum(val_losses) / len(val_losses)}")
 
 
 if __name__ == "__main__":
