@@ -72,8 +72,8 @@ def get_tokens(tokenizer: Tokenizer, corpus_path: str, tokens_path: str) -> np.m
         return np.memmap(tokens_output_path, dtype=np.uint16, mode="r")
     tokens_output_path.parent.mkdir(exist_ok=True, parents=True)
     with open(corpus_path) as corpus_fd, open(tokens_output_path, "wb") as tokens_fd:
-        for i, token in tqdm(
-            enumerate(tokenizer.encode_iterable(corpus_fd)),
+        for token in tqdm(
+            tokenizer.encode_iterable(corpus_fd),
             desc=f"Tokenizing {corpus_path} to {tokens_path}",
         ):
             tokens_fd.write(token.to_bytes(2, byteorder="little"))
