@@ -40,7 +40,7 @@ def main(cfg: DictConfig) -> None:
     random_key, model_key = jax.random.split(random_key)
     model = get_model(cfg.model, model_key)
     print(f"Model trainable parameters: {model.num_trainable_parameters:_}")
-    optimizer = get_optimizer(cfg.training.optimizer)
+    optimizer = hydra.utils.instantiate(cfg.training.optimizer)
     train(
         model,
         optimizer,
@@ -85,21 +85,6 @@ def get_tokens(tokenizer: Tokenizer, corpus_path: str, tokens_path: str) -> np.m
 def get_model(cfg: DictConfig, random_key: jax.Array) -> TransformerLanguageModel:
     lm = TransformerLanguageModel(key=random_key, **cfg)  # type: ignore
     return lm
-
-
-def get_optimizer(cfg: DictConfig) -> optax.GradientTransformation:
-    lr_schedule = hydra.utils.instantiate(cfg.lr_schedule)
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(cfg.max_grad_norm),
-        optax.adamw(
-            learning_rate=lr_schedule,
-            b1=cfg.b1,
-            b2=cfg.b2,
-            weight_decay=cfg.weight_decay,
-            eps=cfg.eps,
-        ),
-    )
-    return optimizer
 
 
 def train(
