@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+import orbax.checkpoint as ocp
 from einops import reduce
 from jaxtyping import Array
 from jaxtyping import Float
@@ -41,15 +42,17 @@ def main(cfg: DictConfig) -> None:
     model = get_model(cfg.model, model_key)
     print(f"Model trainable parameters: {model.num_trainable_parameters:_}")
     optimizer = hydra.utils.instantiate(cfg.training.optimizer)
-    train(
-        model,
-        optimizer,
-        train_tokens,
-        val_tokens,
-        cfg.training,
-        cfg.model.max_sequence_len,
-        random_key,
-    )
+    with get_checkpoint_manager(cfg.training.checkpoints_path) as checkpoint_mgr:
+        train(
+            model,
+            optimizer,
+            train_tokens,
+            val_tokens,
+            cfg.training,
+            cfg.model.max_sequence_len,
+            checkpoint_mgr,
+            random_key,
+        )
 
 
 def get_tokenizer(cfg: DictConfig) -> Tokenizer:
@@ -87,6 +90,12 @@ def get_model(cfg: DictConfig, random_key: jax.Array) -> TransformerLanguageMode
     return lm
 
 
+def get_checkpoint_manager(checkpoints_path: str) -> ocp.CheckpointManager:
+    path = Path(checkpoints_path)
+    path.mkdir(exist_ok=True, parents=True)
+    return ocp.CheckpointManager(path)
+
+
 def train(
     model: TransformerLanguageModel,
     optimizer: optax.GradientTransformation,
@@ -94,6 +103,7 @@ def train(
     val_tokens: np.memmap,
     cfg: DictConfig,
     max_sequence_len: int,
+    checkpoint_manager: ocp.CheckpointManager,
     random_key: jax.Array,
 ) -> None:
     @eqx.filter_jit
@@ -163,6 +173,15 @@ def train(
                 val_losses.append(loss * x.size)
             mean_val_loss = sum(val_losses) / val_tokens.size
             tb_writer.add_scalar("step_loss/validation", mean_val_loss, step)
+            checkpoint_manager.save(
+                step,
+                args=ocp.args.Composite(
+                    model=ocp.args.StandardSave(model),  # type: ignore
+                    opt_state=ocp.args.StandardSave(opt_state),  # type: ignore
+                    metadata=ocp.args.JsonSave({"val_loss": float(mean_val_loss)}),  # type: ignore
+                ),
+            )
+    checkpoint_manager.wait_until_finished()
 
 
 if __name__ == "__main__":

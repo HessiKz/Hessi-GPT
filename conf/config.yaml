@@ -30,6 +30,7 @@ training:
   batch_size: 128
   eval_every_n_steps: 400
   eval_batch_size: 512
+  checkpoints_path: /tmp/checkpoints/
   optimizer:
     _target_: optax.chain
     _args_:
