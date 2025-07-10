@@ -8,7 +8,6 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
-from einops import reduce
 from jaxtyping import Array
 from jaxtyping import Float
 from jaxtyping import Int
@@ -113,10 +112,6 @@ def train(
         y: Int[Array, "batch sequence"],
     ) -> Float[Array, ""]:
         y_pred_logits = jax.vmap(model)(x)
-        # Subtract maximum logit for numerical stability
-        y_pred_logits = y_pred_logits - reduce(
-            y_pred_logits, "batch sequence vocab -> batch sequence 1", "max"
-        )
         losses = jax.vmap(optax.losses.softmax_cross_entropy_with_integer_labels)(
             y_pred_logits, y
         )

@@ -5,7 +5,6 @@ import jax
 import jax.numpy as jnp
 from einops import einsum
 from einops import rearrange
-from einops import reduce
 from einops import repeat
 from jaxtyping import Array
 from jaxtyping import Bool
@@ -93,10 +92,6 @@ def _scaled_dot_product_attention(
     ) / jnp.sqrt(queries.shape[-1])
     if mask is not None:
         attention_logits = jnp.where(mask, attention_logits, -jnp.inf)
-    # Subtract maximum logit in each row for numerical stability
-    attention_logits = attention_logits - reduce(
-        attention_logits, "queries keys -> queries 1", "max"
-    )
     attention_scores = jax.nn.softmax(attention_logits, axis=1)
     return einsum(
         attention_scores,
