@@ -48,6 +48,7 @@ def main(cfg: DictConfig) -> None:
             train_tokens,
             val_tokens,
             cfg.training,
+            cfg.model,
             cfg.model.max_sequence_len,
             checkpoint_mgr,
             random_key,
@@ -100,7 +101,8 @@ def train(
     optimizer: optax.GradientTransformation,
     train_tokens: np.memmap,
     val_tokens: np.memmap,
-    cfg: DictConfig,
+    train_cfg: DictConfig,
+    model_cfg: DictConfig,
     max_sequence_len: int,
     checkpoint_manager: ocp.CheckpointManager,
     random_key: jax.Array,
@@ -138,7 +140,10 @@ def train(
         while True:
             sampling_key, current_key = jax.random.split(sampling_key)
             start_indices = jax.random.randint(
-                current_key, (cfg.batch_size,), 0, train_tokens.size - max_sequence_len
+                current_key,
+                (train_cfg.batch_size,),
+                0,
+                train_tokens.size - max_sequence_len,
             )
             indices = jnp.arange(max_sequence_len + 1) + start_indices.reshape(-1, 1)
             x, y = train_tokens[indices[:, :-1]], train_tokens[indices[:, 1:]]
@@ -147,9 +152,11 @@ def train(
     def val_data_iter() -> Iterator[
         tuple[Int[Array, "batch sequence"], Int[Array, "batch sequence"]]
     ]:
-        for i in range(0, val_tokens.size, cfg.eval_batch_size * max_sequence_len):
+        for i in range(
+            0, val_tokens.size, train_cfg.eval_batch_size * max_sequence_len
+        ):
             start_indices = jnp.arange(
-                i, i + cfg.eval_batch_size * max_sequence_len, max_sequence_len
+                i, i + train_cfg.eval_batch_size * max_sequence_len, max_sequence_len
             )
             indices = jnp.arange(max_sequence_len + 1) + start_indices.reshape(-1, 1)
             x, y = train_tokens[indices[:, :-1]], train_tokens[indices[:, 1:]]
@@ -157,10 +164,11 @@ def train(
 
     tb_writer = SummaryWriter()
     opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
-    for step, (x, y) in zip(range(cfg.num_steps), train_data_iter()):
+    hyperparams = OmegaConf.to_container(model_cfg, resolve=True)
+    for step, (x, y) in zip(range(train_cfg.num_steps), train_data_iter()):
         model, opt_state, train_loss = make_train_step(model, opt_state, x, y)
         tb_writer.add_scalar("step_loss/training", train_loss, step)
-        if step % cfg.eval_every_n_steps == 0:
+        if step % train_cfg.eval_every_n_steps == 0:
             inference_model = eqx.nn.inference_mode(model)
             val_losses = []
             for x, y in val_data_iter():
@@ -173,7 +181,9 @@ def train(
                 args=ocp.args.Composite(
                     model=ocp.args.StandardSave(model),  # type: ignore
                     opt_state=ocp.args.StandardSave(opt_state),  # type: ignore
-                    metadata=ocp.args.JsonSave({"val_loss": float(mean_val_loss)}),  # type: ignore
+                    metadata=ocp.args.JsonSave(  # type: ignore
+                        {"val_loss": float(mean_val_loss), "hyperparams": hyperparams}  # type: ignore
+                    ),
                 ),
             )
     checkpoint_manager.wait_until_finished()
