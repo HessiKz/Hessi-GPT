@@ -204,6 +204,7 @@ class TransformerLanguageModel(eqx.Module):
     transformer_blocks: tuple[_TransformerBlock, ...]
     output_norm: eqx.nn.RMSNorm
     output_projection: eqx.nn.Linear
+    max_sequence_len: int
 
     def __init__(
         self,
@@ -238,6 +239,7 @@ class TransformerLanguageModel(eqx.Module):
             use_bias=False,
             key=output_key,
         )
+        self.max_sequence_len = max_sequence_len
 
     def __call__(
         self, token_ids: Int[Array, " sequence"]
