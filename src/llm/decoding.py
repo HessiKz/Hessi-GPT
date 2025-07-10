@@ -13,12 +13,29 @@ def decode_greedy(model: TransformerLanguageModel, context: list[int]) -> int:
     return int(probabilities[index].argmax())
 
 
+def decode_nucleus(
+    model: TransformerLanguageModel,
+    context: list[int],
+    key: jax.Array,
+    p: float = 0.5,
+    temperature: float = 0.1,
+) -> int:
+    _check_temperature(temperature)
+    if p < 0 or p > 1:
+        raise ValueError("p must be strictly between 0 and 1")
+    window, index = _pad_context(context, model.max_sequence_len)
+    probabilities = _get_token_probabilities(model, window, temperature)
+    return int(_sample_nucleus(probabilities[index], p, key))
+
+
 @eqx.filter_jit
 def _get_token_probabilities(
-    model: TransformerLanguageModel, inputs: Int[Array, " sequence"]
+    model: TransformerLanguageModel,
+    inputs: Int[Array, " sequence"],
+    temperature: float = 1,
 ) -> Float[Array, "sequence vocab"]:
     logits = eqx.nn.inference_mode(model)(inputs)
-    return jax.nn.softmax(logits)
+    return jax.nn.softmax(logits / temperature)
 
 
 def _pad_context(
@@ -27,3 +44,21 @@ def _pad_context(
     window = jnp.array(context[len(context) - max_sequence_len :])
     index = window.size - 1
     return jnp.pad(window, (0, max_sequence_len - window.size)), index
+
+
+def _check_temperature(temperature: float) -> None:
+    if temperature <= 0:
+        raise ValueError("temperature must be greater than 0")
+
+
+@eqx.filter_jit
+def _sample_nucleus(
+    probabilities: Float[Array, " vocab"], p: float, key: jax.Array
+) -> Int[Array, ""]:
+    argsorted_probs = jnp.argsort(probabilities, descending=True)
+    sorted_probs = probabilities[argsorted_probs]
+    mask = jnp.cumsum(sorted_probs) < p
+    mask = jnp.concatenate((jnp.array([1]), mask[:-1]))
+    probs = jnp.where(mask, sorted_probs, 0)
+    probs = probs / probs.sum()
+    return jax.random.choice(key, argsorted_probs, p=probs)
