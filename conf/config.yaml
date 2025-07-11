@@ -26,9 +26,9 @@ model:
   max_sequence_len: 256
   vocab_size: ${tokenization.vocab_size}
 training:
-  num_steps: 10000
+  num_steps: 10001
   batch_size: 128
-  eval_every_n_steps: 400
+  eval_every_n_steps: 2000
   eval_batch_size: 512
   checkpoints_path: /tmp/checkpoints/
   optimizer:
@@ -40,6 +40,6 @@ training:
         learning_rate:
           _target_: optax.schedules.warmup_cosine_decay_schedule
           init_value: 1e-4
-          peak_value: 5e-3
-          warmup_steps: 1000
+          peak_value: 1e-3
+          warmup_steps: 100
           decay_steps: 10000
