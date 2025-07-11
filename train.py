@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Iterator
 
@@ -23,6 +24,7 @@ from tqdm import tqdm
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     random_key = jax.random.PRNGKey(cfg.random_seed)
+    set_xla_flags()
     tokenizer = get_tokenizer(cfg.tokenization)
     print(
         f"Loading training token data from {cfg.tokenization.tokenized_train_set_path}"
@@ -53,6 +55,12 @@ def main(cfg: DictConfig) -> None:
             checkpoint_mgr,
             random_key,
         )
+
+
+def set_xla_flags() -> None:
+    os.environ["XLA_FLAGS"] = (
+        "--xla_gpu_enable_triton_softmax_fusion=true --xla_gpu_triton_gemm_any=false "
+    )
 
 
 def get_tokenizer(cfg: DictConfig) -> Tokenizer:
