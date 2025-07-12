@@ -25,6 +25,7 @@ model:
   rope_theta: 10000.0
   max_sequence_len: 256
   vocab_size: ${tokenization.vocab_size}
+  dtype: bfloat16
 training:
   num_steps: 10001
   batch_size: 128

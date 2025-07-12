@@ -17,25 +17,34 @@ class _PositionwiseFFN(eqx.Module):
     linear_2: eqx.nn.Linear
     linear_3: eqx.nn.Linear
 
-    def __init__(self, input_output_dim: int, feed_forward_dim: int, key: jax.Array):
+    def __init__(
+        self,
+        input_output_dim: int,
+        feed_forward_dim: int,
+        key: jax.Array,
+        dtype: jnp.dtype | None = None,
+    ):
         key1, key2, key3 = jax.random.split(key, 3)
         self.linear_1 = eqx.nn.Linear(
             in_features=input_output_dim,
             out_features=feed_forward_dim,
             use_bias=False,
             key=key1,
+            dtype=dtype,
         )
         self.linear_2 = eqx.nn.Linear(
             in_features=feed_forward_dim,
             out_features=input_output_dim,
             use_bias=False,
             key=key2,
+            dtype=dtype,
         )
         self.linear_3 = eqx.nn.Linear(
             in_features=input_output_dim,
             out_features=feed_forward_dim,
             use_bias=False,
             key=key3,
+            dtype=dtype,
         )
 
     def __call__(self, x: Float[Array, " hidden"]) -> Float[Array, " hidden"]:
@@ -50,7 +59,12 @@ class _RotaryPositionalEncoding(eqx.Module):
     query_key_dim: int
     max_sequence_len: int
 
-    def __init__(self, theta: float, query_key_dim: int, max_sequence_len: int):
+    def __init__(
+        self,
+        theta: float,
+        query_key_dim: int,
+        max_sequence_len: int,
+    ):
         assert query_key_dim % 2 == 0, "Query/key dimension must be even to apply RoPE"
         self.theta = theta
         self.query_key_dim = query_key_dim
@@ -70,7 +84,7 @@ class _RotaryPositionalEncoding(eqx.Module):
                 "(row column) i k -> i (k row) column",
                 row=2,
                 column=2,
-            )
+            ).astype(x.dtype)
         x = repeat(x, "sequence (query_key n) -> sequence n (query_key m)", n=2, m=2)
         return einsum(
             x,
@@ -112,6 +126,7 @@ class _CausalMultiHeadSelfAttention(eqx.Module):
         num_heads: int,
         key: jax.Array,
         rope: _RotaryPositionalEncoding | None = None,
+        dtype: jnp.dtype | None = None,
     ):
         self.num_heads = num_heads
         qkv_key, output_key = jax.random.split(key, 2)
@@ -123,12 +138,14 @@ class _CausalMultiHeadSelfAttention(eqx.Module):
             out_features=3 * num_heads * hidden_dim,
             use_bias=False,
             key=qkv_key,
+            dtype=dtype,
         )
         self.W_o = eqx.nn.Linear(
             in_features=num_heads * hidden_dim,
             out_features=input_dim,
             use_bias=False,
             key=output_key,
+            dtype=dtype,
         )
 
     def __call__(
@@ -176,6 +193,7 @@ class _TransformerBlock(eqx.Module):
         rope_theta: float,
         max_sequence_len: int,
         key: jax.Array,
+        dtype: jnp.dtype | None = None,
     ):
         mha_key, ff_key = jax.random.split(key, 2)
         rope = _RotaryPositionalEncoding(
@@ -184,11 +202,15 @@ class _TransformerBlock(eqx.Module):
             query_key_dim=input_dim // num_heads,
         )
         self.mha = _CausalMultiHeadSelfAttention(
-            input_dim, num_heads, key=mha_key, rope=rope
+            input_dim,
+            num_heads,
+            key=mha_key,
+            rope=rope,
+            dtype=dtype,
         )
-        self.ff = _PositionwiseFFN(input_dim, feed_forward_dim, key=ff_key)
-        self.pre_mha_norm = eqx.nn.RMSNorm(input_dim, use_bias=False)
-        self.pre_ff_norm = eqx.nn.RMSNorm(input_dim, use_bias=False)
+        self.ff = _PositionwiseFFN(input_dim, feed_forward_dim, key=ff_key, dtype=dtype)
+        self.pre_mha_norm = eqx.nn.RMSNorm(input_dim, use_bias=False, dtype=dtype)
+        self.pre_ff_norm = eqx.nn.RMSNorm(input_dim, use_bias=False, dtype=dtype)
 
     def __call__(
         self,
@@ -216,10 +238,14 @@ class TransformerLanguageModel(eqx.Module):
         vocab_size: int,
         num_transformer_blocks: int,
         key: jax.Array,
+        dtype: jnp.dtype | None = None,
     ):
         embedding_key, transformers_key, output_key = jax.random.split(key, 3)
         self.embedding = eqx.nn.Embedding(
-            num_embeddings=vocab_size, embedding_size=embedding_dim, key=embedding_key
+            num_embeddings=vocab_size,
+            embedding_size=embedding_dim,
+            key=embedding_key,
+            dtype=dtype,
         )
         self.transformer_blocks = tuple(
             _TransformerBlock(
@@ -229,15 +255,17 @@ class TransformerLanguageModel(eqx.Module):
                 rope_theta=rope_theta,
                 max_sequence_len=max_sequence_len,
                 key=block_key,
+                dtype=dtype,
             )
             for block_key in jax.random.split(transformers_key, num_transformer_blocks)
         )
-        self.output_norm = eqx.nn.RMSNorm(embedding_dim, use_bias=False)
+        self.output_norm = eqx.nn.RMSNorm(embedding_dim, use_bias=False, dtype=dtype)
         self.output_projection = eqx.nn.Linear(
             in_features=embedding_dim,
             out_features=vocab_size,
             use_bias=False,
             key=output_key,
+            dtype=dtype,
         )
         self.max_sequence_len = max_sequence_len
 
