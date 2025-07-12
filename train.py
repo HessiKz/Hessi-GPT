@@ -115,7 +115,6 @@ def train(
     checkpoint_manager: ocp.CheckpointManager,
     random_key: jax.Array,
 ) -> None:
-    @eqx.filter_jit
     def loss_fn(
         model: TransformerLanguageModel,
         x: Int[Array, "batch sequence"],
@@ -180,7 +179,7 @@ def train(
             inference_model = eqx.nn.inference_mode(model)
             val_losses = []
             for x, y in val_data_iter():
-                loss = loss_fn(inference_model, x, y)
+                loss = eqx.filter_jit(loss_fn)(inference_model, x, y)
                 val_losses.append(loss * x.size)
             mean_val_loss = sum(val_losses) / val_tokens.size
             tb_writer.add_scalar("step_loss/validation", mean_val_loss, step)
