@@ -30,7 +30,11 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
+    "tensorboard>=2.19.0",
 ]
 
 [tool.ruff]
 lint.ignore = ["F722"]
+
+[tool.uv.workspace]
+members = ["test/potato", "test"]
