@@ -44,3 +44,6 @@ training:
           peak_value: 1e-3
           warmup_steps: 100
           decay_steps: 10000
+exporting:
+  checkpoint: /tmp/checkpoints/7500
+  output_path: tf_model
