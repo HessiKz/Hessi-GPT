@@ -283,13 +283,4 @@ class TransformerLanguageModel(eqx.Module):
 
     @property
     def num_trainable_parameters(self) -> int:
-        # Filter the model PyTree to only count trainable parameters (i.e. those
-        # for which gradients are calculated)
-        @eqx.filter_grad
-        def forward_pass(
-            model: TransformerLanguageModel, x: Int[Array, " sequence"]
-        ) -> Float[Array, ""]:
-            return model(x).sum()
-
-        gradients = forward_pass(self, jnp.zeros(10, dtype=jnp.int32))
-        return sum(x.size for x in jax.tree_util.tree_leaves(gradients))
+        return sum(x.size for x in jax.tree.leaves(eqx.filter(self, eqx.is_array)))
