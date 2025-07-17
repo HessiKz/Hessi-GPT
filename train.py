@@ -13,12 +13,13 @@ from jaxtyping import Array
 from jaxtyping import Float
 from jaxtyping import Int
 from jaxtyping import PyTree
-from llm.tokenization import Tokenizer
-from llm.transformer import TransformerLanguageModel
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
+
+from minigpt.tokenization import Tokenizer
+from minigpt.transformer import TransformerLanguageModel
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")

@@ -6,11 +6,11 @@ import jax
 import orbax.checkpoint as ocp
 import tensorflow as tf
 from jax.experimental import jax2tf
-from llm.tokenization import BPETokenizer
-from llm.transformer import TransformerLanguageModel
 from omegaconf import DictConfig
 
-from train import get_tokenizer
+from .train import get_tokenizer
+from minigpt.tokenization import BPETokenizer
+from minigpt.transformer import TransformerLanguageModel
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")

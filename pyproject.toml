@@ -1,5 +1,5 @@
 [project]
-name = "llm"
+name = "minigpt"
 version = "0.1.0"
 description = ""
 readme = "README.md"
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-llm = "llm:main"
+minigpt = "minigpt:main"
 
 [build-system]
 requires = ["hatchling"]

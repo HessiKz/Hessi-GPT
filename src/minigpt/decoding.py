@@ -4,7 +4,8 @@ import jax.numpy as jnp
 from jaxtyping import Array
 from jaxtyping import Float
 from jaxtyping import Int
-from llm.transformer import TransformerLanguageModel
+
+from minigpt.transformer import TransformerLanguageModel
 
 
 def decode_greedy(model: TransformerLanguageModel, context: list[int]) -> int:
