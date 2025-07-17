@@ -3,14 +3,15 @@ import json
 import equinox as eqx
 import hydra
 import jax
+import jax.numpy as jnp
 import orbax.checkpoint as ocp
 import tensorflow as tf
 from jax.experimental import jax2tf
 from omegaconf import DictConfig
 
-from .train import get_tokenizer
 from minigpt.tokenization import BPETokenizer
 from minigpt.transformer import TransformerLanguageModel
+from train import get_tokenizer
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
@@ -19,6 +20,8 @@ def main(cfg: DictConfig) -> None:
     model = eqx.nn.inference_mode(
         load_model_from_checkpoint(checkpointer, cfg.exporting.checkpoint)
     )
+    # bfloat16 is not supported in e.g. TFJS, so we convert all parameters to float32
+    model = ensure_float32(model)
     tf_model = convert_to_tf_model(model)
     tf.saved_model.save(tf_model, cfg.exporting.output_path)
     tokenizer = get_tokenizer(cfg.tokenization)
@@ -49,6 +52,12 @@ def load_model_from_checkpoint(
     model = TransformerLanguageModel(key=jax.random.PRNGKey(0), **hyperparams)
     model = jax.tree.map_with_path(convert_path, model)
     return model
+
+
+def ensure_float32(model: TransformerLanguageModel) -> TransformerLanguageModel:
+    return jax.tree.map(
+        lambda x: x.astype(jnp.float32) if isinstance(x, jax.Array) else x, model
+    )
 
 
 def convert_to_tf_model(model: TransformerLanguageModel) -> tf.Module:
