@@ -47,3 +47,4 @@ training:
 exporting:
   checkpoint: /tmp/checkpoints/7500
   output_path: tf_model
+  tokenizer_output_path: tokenizer.json
