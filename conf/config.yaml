@@ -43,7 +43,7 @@ training:
           init_value: 1e-4
           peak_value: 1e-2
           warmup_steps: 500
-          decay_steps: 7500
+          decay_steps: ${training.num_steps}
 exporting:
   checkpoint: /tmp/checkpoints/7500
   output_path: tf_model
