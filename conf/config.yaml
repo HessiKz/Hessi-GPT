@@ -1,6 +1,6 @@
 random_seed: 42
-train_corpus_path: data/TinyStoriesV2-GPT4-train.txt
-val_corpus_path: data/TinyStoriesV2-GPT4-valid.txt
+train_corpus_path: data/train.txt
+val_corpus_path: data/valid.txt
 tokenization:
   vocab_size: 10000
   save_path: tokenizer.pkl
