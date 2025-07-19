@@ -31,7 +31,7 @@ training:
   eval_every_n_steps: 2500
   eval_batch_size: 512
   mixed_precision_policy: p=f32,c=bf16
-  checkpoints_path: /tmp/checkpoints/
+  checkpoints_path: /tmp/minigpt_checkpoints/
   optimizer:
     _target_: optax.chain
     _args_:
