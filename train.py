@@ -6,6 +6,7 @@ import equinox as eqx
 import hydra
 import jax
 import jax.numpy as jnp
+import jmp
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
@@ -43,6 +44,8 @@ def main(cfg: DictConfig) -> None:
     random_key, model_key = jax.random.split(random_key)
     model = get_model(cfg.model, model_key)
     print(f"Model trainable parameters: {model.num_trainable_parameters:_}")
+    mp_policy = jmp.get_policy(cfg.training.mixed_precision_policy)
+    model = mp_policy.cast_to_param(model)
     optimizer = hydra.utils.instantiate(cfg.training.optimizer)
     with get_checkpoint_manager(cfg.training.checkpoints_path) as checkpoint_mgr:
         train(
@@ -50,6 +53,7 @@ def main(cfg: DictConfig) -> None:
             optimizer,
             train_tokens,
             val_tokens,
+            mp_policy,
             cfg.training,
             cfg.model,
             cfg.model.max_sequence_len,
@@ -110,6 +114,7 @@ def train(
     optimizer: optax.GradientTransformation,
     train_tokens: np.memmap,
     val_tokens: np.memmap,
+    mp_policy: jmp.Policy,
     train_cfg: DictConfig,
     model_cfg: DictConfig,
     max_sequence_len: int,
@@ -134,6 +139,7 @@ def train(
         x: Int[Array, "batch sequence"],
         y: Int[Array, "batch sequence"],
     ) -> tuple[TransformerLanguageModel, PyTree, Float[Array, ""]]:
+        model = mp_policy.cast_to_compute(model)
         loss, grads = eqx.filter_value_and_grad(loss_fn)(model, x, y)
         updates, opt_state = optimizer.update(
             grads, opt_state, eqx.filter(model, eqx.is_array)
@@ -172,6 +178,7 @@ def train(
 
     tb_writer = SummaryWriter()
     opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
+    opt_state = mp_policy.cast_to_param(opt_state)
     hyperparams = OmegaConf.to_container(model_cfg, resolve=True)
     for step, (x, y) in zip(range(train_cfg.num_steps), train_data_iter()):
         model, opt_state, train_loss = make_train_step(model, opt_state, x, y)
