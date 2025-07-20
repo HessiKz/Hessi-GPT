@@ -1,50 +1,9 @@
+defaults:
+  - tokenization: default
+  - model: default
+  - training: default
+  - exporting: default
+  - _self_
 random_seed: 42
 train_corpus_path: data/train.txt
 val_corpus_path: data/valid.txt
-tokenization:
-  vocab_size: 10000
-  save_path: tokenizer.pkl
-  tokenizer:
-    _target_: minigpt.tokenization.BPETokenizer
-    vocab_size: ${tokenization.vocab_size}
-    special_tokens:
-      - ${tokenization.training.pre_tokenization_split_token}
-    pre_tokenization_regex: |-
-      '(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+
-  training:
-    corpus_path: ${train_corpus_path}
-    num_processes: 32
-    pre_tokenization_split_token: "<|endoftext|>"
-  tokenized_train_set_path: data/tokenized/train.dat
-  tokenized_val_set_path: data/tokenized/val.dat
-model:
-  embedding_dim: 512
-  num_transformer_blocks: 4
-  num_heads: 16
-  feed_forward_dim: 1344
-  rope_theta: 10000.0
-  max_sequence_len: 256
-  vocab_size: ${tokenization.vocab_size}
-training:
-  num_steps: 7501
-  batch_size: 128
-  eval_every_n_steps: 2500
-  eval_batch_size: 512
-  mixed_precision_policy: p=f32,c=bf16
-  checkpoints_path: /tmp/minigpt_checkpoints/
-  optimizer:
-    _target_: optax.chain
-    _args_:
-      - _target_: optax.clip_by_global_norm
-        max_norm: 1.0
-      - _target_: optax.adamw
-        learning_rate:
-          _target_: optax.schedules.warmup_cosine_decay_schedule
-          init_value: 1e-4
-          peak_value: 1e-2
-          warmup_steps: 500
-          decay_steps: ${training.num_steps}
-exporting:
-  checkpoint: /tmp/checkpoints/7500
-  output_path: tf_model
-  tokenizer_output_path: tokenizer.json

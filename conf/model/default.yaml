@@ -1,0 +1,7 @@
+embedding_dim: 512
+num_transformer_blocks: 4
+num_heads: 16
+feed_forward_dim: 1344
+rope_theta: 10000.0
+max_sequence_len: 256
+vocab_size: ${tokenization.vocab_size}
