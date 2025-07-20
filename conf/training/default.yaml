@@ -1,5 +1,5 @@
 num_steps: 7501
-batch_size: 128
+batch_size: 256
 mixed_precision_policy: p=f32,c=bf16
 checkpoints_path: /tmp/minigpt_checkpoints/
 optimizer:
