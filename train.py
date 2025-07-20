@@ -182,6 +182,7 @@ def train(
     hyperparams = OmegaConf.to_container(model_cfg, resolve=True)
     for step, (x, y) in zip(range(train_cfg.num_steps), train_data_iter()):
         model, opt_state, train_loss = make_train_step(model, opt_state, x, y)
+        print(f"Step {step}: Training loss {train_loss}")
         tb_writer.add_scalar("step_loss/training", train_loss, step)
         if step % train_cfg.eval_every_n_steps == 0:
             inference_model = eqx.nn.inference_mode(model)
@@ -190,6 +191,7 @@ def train(
                 loss = eqx.filter_jit(loss_fn)(inference_model, x, y)
                 val_losses.append(loss * x.size)
             mean_val_loss = sum(val_losses) / val_tokens.size
+            print(f"Step {step}: Validation loss {mean_val_loss}")
             tb_writer.add_scalar("step_loss/validation", mean_val_loss, step)
             checkpoint_manager.save(
                 step,
