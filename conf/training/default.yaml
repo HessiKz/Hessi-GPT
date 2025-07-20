@@ -1,7 +1,5 @@
 num_steps: 7501
 batch_size: 128
-eval_every_n_steps: 2500
-eval_batch_size: 512
 mixed_precision_policy: p=f32,c=bf16
 checkpoints_path: /tmp/minigpt_checkpoints/
 optimizer:
@@ -16,3 +14,9 @@ optimizer:
         peak_value: 1e-2
         warmup_steps: 500
         decay_steps: ${training.num_steps}
+eval:
+  every_n_steps: 2500
+  batch_size: 512
+  generate_text:
+    prompt: ${tokenization.training.pre_tokenization_split_token}
+    num_tokens: 100

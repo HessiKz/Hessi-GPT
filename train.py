@@ -19,6 +19,7 @@ from omegaconf import OmegaConf
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
+from minigpt.decoding import decode_greedy
 from minigpt.tokenization import Tokenizer
 from minigpt.transformer import TransformerLanguageModel
 
@@ -40,7 +41,6 @@ def main(cfg: DictConfig) -> None:
     val_tokens = get_tokens(
         tokenizer, cfg.val_corpus_path, cfg.tokenization.tokenized_val_set_path
     )
-    del tokenizer
     random_key, model_key = jax.random.split(random_key)
     model = get_model(cfg.model, model_key)
     print(f"Model trainable parameters: {model.num_trainable_parameters:_}")
@@ -53,6 +53,7 @@ def main(cfg: DictConfig) -> None:
             optimizer,
             train_tokens,
             val_tokens,
+            tokenizer,
             mp_policy,
             cfg.training,
             cfg.model,
@@ -114,6 +115,7 @@ def train(
     optimizer: optax.GradientTransformation,
     train_tokens: np.memmap,
     val_tokens: np.memmap,
+    tokenizer: Tokenizer,
     mp_policy: jmp.Policy,
     train_cfg: DictConfig,
     model_cfg: DictConfig,
@@ -167,14 +169,23 @@ def train(
         tuple[Int[Array, "batch sequence"], Int[Array, "batch sequence"]]
     ]:
         for i in range(
-            0, val_tokens.size, train_cfg.eval_batch_size * max_sequence_len
+            0, val_tokens.size, train_cfg.eval.batch_size * max_sequence_len
         ):
             start_indices = jnp.arange(
-                i, i + train_cfg.eval_batch_size * max_sequence_len, max_sequence_len
+                i, i + train_cfg.eval.batch_size * max_sequence_len, max_sequence_len
             )
             indices = jnp.arange(max_sequence_len + 1) + start_indices.reshape(-1, 1)
             x, y = train_tokens[indices[:, :-1]], train_tokens[indices[:, 1:]]
             yield x, y
+
+    def generate_text(
+        model: TransformerLanguageModel,
+    ) -> str:
+        context_tokens = tokenizer.encode(train_cfg.eval.generate_text.prompt)
+        for _ in range(train_cfg.eval.generate_text.num_tokens):
+            token = decode_greedy(model, context_tokens)
+            context_tokens.append(token)
+        return tokenizer.decode(context_tokens)
 
     tb_writer = SummaryWriter()
     opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
@@ -184,7 +195,7 @@ def train(
         model, opt_state, train_loss = make_train_step(model, opt_state, x, y)
         print(f"Step {step}: Training loss {train_loss}")
         tb_writer.add_scalar("step_loss/training", train_loss, step)
-        if step % train_cfg.eval_every_n_steps == 0:
+        if step % train_cfg.eval.every_n_steps == 0:
             inference_model = eqx.nn.inference_mode(model)
             val_losses = []
             for x, y in val_data_iter():
@@ -199,6 +210,9 @@ def train(
             tb_writer.add_scalar(
                 "step_perplexity/validation", mean_val_perplexity, step
             )
+            text = generate_text(inference_model)
+            print(f'Step {step}: generated text (greedy decoding) "{text}"')
+            tb_writer.add_text("step_generated_text", text, step)
             checkpoint_manager.save(
                 step,
                 args=ocp.args.Composite(
