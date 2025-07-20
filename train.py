@@ -191,8 +191,14 @@ def train(
                 loss = eqx.filter_jit(loss_fn)(inference_model, x, y)
                 val_losses.append(loss * x.size)
             mean_val_loss = sum(val_losses) / val_tokens.size
-            print(f"Step {step}: Validation loss {mean_val_loss}")
+            mean_val_perplexity = jnp.exp(mean_val_loss)
+            print(
+                f"Step {step}: Validation loss {mean_val_loss}, perplexity {mean_val_perplexity}"
+            )
             tb_writer.add_scalar("step_loss/validation", mean_val_loss, step)
+            tb_writer.add_scalar(
+                "step_perplexity/validation", mean_val_perplexity, step
+            )
             checkpoint_manager.save(
                 step,
                 args=ocp.args.Composite(
