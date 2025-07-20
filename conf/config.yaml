@@ -1,6 +1,6 @@
 defaults:
   - tokenization: default
-  - model: 29M
+  - model: 10M
   - training: default
   - exporting: default
   - _self_
