@@ -49,7 +49,9 @@ The training process can be tracked using [TensorBoard](https://www.tensorflow.o
 ### Generating text from a trained checkpoint
 
 Once the model has been trained to convergence, we can use it to generate text by sampling tokens autoregressively, optionally from a starting prompt.
-See the `generate_text.ipynb` notebook for some examples.
+See the `generate_text.ipynb` notebook <a target="_blank" href="https://colab.research.google.com/github/jongoiko/minigpt/blob/main/generate_text.ipynb">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a> for some examples.
 
 ### Exporting to TF SavedModel
 
