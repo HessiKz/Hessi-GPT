@@ -29,6 +29,24 @@ def decode_nucleus(
     return int(_sample_nucleus(probabilities[index], p, key))
 
 
+def decode_topk(
+    model: TransformerLanguageModel,
+    context: list[int],
+    key: jax.Array,
+    k: int = 50,
+    temperature: float = 0.1,
+) -> int:
+    _check_temperature(temperature)
+    vocab_size = model.embedding.num_embeddings
+    if k <= 0 or k > vocab_size:
+        raise ValueError(
+            f"k must be greater than 0 and not greater than the model's vocabulary size ({vocab_size})"
+        )
+    window, index = _pad_context(context, model.max_sequence_len)
+    probabilities = _get_token_probabilities(model, window, temperature)
+    return int(_sample_topk(probabilities[index], k, key))
+
+
 @eqx.filter_jit
 def _get_token_probabilities(
     model: TransformerLanguageModel,
@@ -62,4 +80,15 @@ def _sample_nucleus(
     mask = jnp.concatenate((jnp.array([1]), mask[:-1]))
     probs = jnp.where(mask, sorted_probs, 0)
     probs = probs / probs.sum()
+    return jax.random.choice(key, argsorted_probs, p=probs)
+
+
+@eqx.filter_jit
+def _sample_topk(
+    probabilities: Float[Array, " vocab"], k: int, key: jax.Array
+) -> Int[Array, ""]:
+    argsorted_probs = jnp.argsort(probabilities, descending=True)
+    sorted_probs = probabilities[argsorted_probs]
+    sorted_probs = sorted_probs.at[k:].set(0)
+    probs = sorted_probs / sorted_probs.sum()
     return jax.random.choice(key, argsorted_probs, p=probs)
