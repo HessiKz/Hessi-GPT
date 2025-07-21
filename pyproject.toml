@@ -1,7 +1,7 @@
 [project]
 name = "minigpt"
 version = "0.1.0"
-description = ""
+description = "Training tiny Transformer language models"
 readme = "README.md"
 authors = [
     { name = "Jon Goikoetxea", email = "jon.goikoetxea.m@gmail.com" }
@@ -38,6 +38,3 @@ dev = [
 
 [tool.ruff]
 lint.ignore = ["F722"]
-
-[tool.uv.workspace]
-members = ["test/potato", "test"]
