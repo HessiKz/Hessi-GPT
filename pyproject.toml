@@ -1,10 +1,10 @@
 [project]
-name = "minigpt"
+name = "hessi-gpt"
 version = "0.1.0"
-description = "Training tiny Transformer language models"
+description = "Hessi-GPT — GPT-2 chat fine-tuning, streaming inference, and web UI by HessiKz"
 readme = "README.md"
 authors = [
-    { name = "Jon Goikoetxea", email = "jon.goikoetxea.m@gmail.com" }
+    { name = "HessiKz" }
 ]
 requires-python = ">=3.11"
 dependencies = [

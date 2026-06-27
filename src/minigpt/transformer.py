@@ -1,3 +1,4 @@
+# Hessi-GPT — https://github.com/HessiKz/
 from __future__ import annotations
 
 import equinox as eqx

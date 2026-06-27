@@ -1,0 +1,8 @@
+# Hessi-GPT chat stack (CPU-friendly)
+torch
+transformers
+datasets
+accelerate
+fastapi
+uvicorn
+pydantic

@@ -209,6 +209,11 @@ __marimo__/
 # Data directory
 data/
 
+# Model checkpoints (generate locally via finetune_gpt2_chat.py)
+checkpoints/
+releases/
+*.safetensors
+
 # Pickle-serialized files
 *.pkl
 

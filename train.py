@@ -1,3 +1,4 @@
+# Hessi-GPT — https://github.com/HessiKz/
 import os
 from pathlib import Path
 from typing import Iterator

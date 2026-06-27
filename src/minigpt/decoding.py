@@ -1,3 +1,4 @@
+# Hessi-GPT — https://github.com/HessiKz/
 import equinox as eqx
 import jax
 import jax.numpy as jnp

@@ -1,131 +1,187 @@
-# minigpt
+# Hessi-GPT
 
-> The secret of life is not just about finding a place but about finding joy in the journey.
->
-> — <cite> minigpt (10M) completing the phrase "The secret of life is"</cite>
+**A end-to-end chat language model — fine-tuning, inference, and a live streaming UI.**
 
-This repo implements all basic components to train a toy Transformer language model on a single GPU:
+[![Author](https://img.shields.io/badge/author-HessiKz-blue)](https://github.com/HessiKz/)
+[![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-inference-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-server-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-- Byte-pair encoding (BPE) tokenization
-- Decoder-only Transformer with RoPE [[1]](#1) positional embeddings
-- A basic training loop with mixed-precision training and checkpointing
-- Sampling/Decoding functions to generate text from a trained LM.
+> **Portfolio summary:** Built a full-stack LLM chat application on GPT-2 124M — from dataset prep and fine-tuning through a FastAPI streaming backend and a custom real-time inference UI with pipeline telemetry.
 
-All configurations are stored in `conf/` and read using [hydra](https://hydra.cc/).
-Checkpoints trained on SimpleStories [[2]](#2) are available in the [Releases](https://github.com/jongoiko/minigpt/releases/) page.
+---
 
-## Training
+## Overview
 
-The provided default configuration sets up hyperparameters to train a tiny LM ([~10M parameters](#model-sizes)) on SimpleStories, a text dataset that is similar in spirit to TinyStories [[3]](#3) but provides more varied data.
+**Hessi-GPT** is a personal language-model project that goes beyond loading a pretrained checkpoint. It includes:
 
-### Downloading the dataset
+- **Chat fine-tuning** of OpenAI GPT-2 (124M) on conversational data
+- **Streaming inference** with top-p sampling and multi-turn memory
+- **FastAPI backend** exposing Server-Sent Events (SSE) for token-by-token output
+- **Custom web UI** with live pipeline state, architecture specs, and token telemetry
 
-The script `get_simplestories.py` pulls the dataset training split from HuggingFace, separating it into training and validation sets.
-It is strongly recommended to run it with [uv](https://docs.astral.sh/uv/) to automatically install all dependencies:
+The project started from a small JAX transformer codebase and was extended into a production-style chat stack using PyTorch and Hugging Face Transformers.
 
-```shell
-uv run get_simplestories.py
+---
+
+## What I Built
+
+| Layer | Description |
+|-------|-------------|
+| **Fine-tuning pipeline** | Dataset loading, chat formatting (`User:` / `Assistant:`), Hugging Face `Trainer` loop |
+| **Inference engine** | GPT-2 load/generate with streaming, stop sequences, and conversation history |
+| **API server** | FastAPI + SSE at `/api/chat`, health and architecture endpoints |
+| **Frontend** | Industrial-brutalist chat terminal with live pipeline phases and per-token metrics |
+| **CLI** | `generate.py` for quick local testing without the UI |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    UI[Web UI] -->|POST /api/chat| API[FastAPI Server]
+    API --> Engine[GPT-2 Engine]
+    Engine --> Model[GPT-2 124M Chat]
+    Engine -->|SSE tokens| API
+    API -->|SSE stream| UI
+
+    FT[finetune_gpt2_chat.py] --> Data[gpt2_chat/data.py]
+    Data --> CKPT[(checkpoints/gpt2-chat)]
+    CKPT --> Engine
 ```
 
-This will write the train/validation corpora to the paths specified in the top-level config (`train_corpus_path` / `val_corpus_path`).
+**Model:** GPT-2 124M · 12 layers · 768 d_model · 1024 context · BPE tokenizer  
+**Decoding:** Top-p (nucleus) sampling · repetition penalty · multi-turn prompt formatting
 
-### Training the LM
+---
 
-We can now run the main training script, which will:
+## Tech Stack
 
-- Train a BPE tokenizer and save the tokenized corpora on disk (see `tokenization` in the configuration);
-- Instatiate a Transformer LM (see `model`);
-- Train the LM for a specified number of steps (see `training`).
-Periodically, the model's loss on the validation set will be evaluated and a checkpoint will be saved.
+**ML / NLP:** PyTorch, Hugging Face Transformers, Datasets, Accelerate  
+**Backend:** FastAPI, Uvicorn, Pydantic, SSE streaming  
+**Frontend:** Vanilla HTML/CSS/JS (no framework)  
+**Original codebase:** JAX/Equinox transformer (training & research path retained)
 
-To start training, simply run
+---
 
-```shell
-uv run train.py
+## Quick Start
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/HessiKz/Hessi-GPT.git
+cd Hessi-GPT
+python -m venv .venv
+source .venv/bin/activate
+pip install torch transformers datasets accelerate fastapi uvicorn pydantic
 ```
 
-The training process can be tracked using [TensorBoard](https://www.tensorflow.org/tensorboard).
+### 2. Fine-tune the chat model
 
-### Generating text from a trained checkpoint
+Training downloads base `gpt2` from Hugging Face and saves a chat checkpoint locally (~500 MB).
 
-Once the model has been trained to convergence, we can use it to generate text by sampling tokens autoregressively, optionally from a starting prompt.
-See the `generate_text.ipynb` notebook <a target="_blank" href="https://colab.research.google.com/github/jongoiko/minigpt/blob/main/generate_text.ipynb">
-  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
-</a> for some examples.
-
-### Exporting to TF SavedModel
-
-Model checkpoints can be exported to the [TensorFlow SavedModel](https://www.tensorflow.org/guide/saved_model) format:
-
-```shell
-uv run export_to_tf.py
+```bash
+CUDA_VISIBLE_DEVICES="" python finetune_gpt2_chat.py --max-steps 60
 ```
 
-See the `exporting` configuration to change the checkpoint / output path.
+Checkpoint output: `checkpoints/gpt2-chat/`
 
-### Training on TinyStories
+> **Note:** Model weights are not committed to this repo (size limits). Run the fine-tune step above to generate them locally.
 
-Just overwrite the training and validation corpora:
+### 3. Chat from the CLI
 
-```shell
-wget -O data/train.txt https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-train.txt
-wget -O data/valid.txt https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-valid.txt
+```bash
+python generate.py --prompt "Hello! How are you?" --max-tokens 80
 ```
 
-If a training run was previously started with another dataset, it is necessary to remove the tokenizer and encoded data to re-train the BPE tokenizer:
+### 4. Launch the web UI
 
-```shell
-rm tokenizer.pkl
-rm -r data/tokenized/
-uv run train.py # Start a new training run from scratch
+```bash
+./run_ui.sh
 ```
 
-## Transformer architecture
+Open **http://127.0.0.1:8765**
 
-The implemented model applies the following modifications to the original Transformer [[4]](#4):
+The UI streams tokens in real time and shows pipeline phases: encode → decode → emit.
 
-- Rotary Position Embeddings (RoPE) [[1]](#1);
-- The usage of RMSNorm [[5]](#5) instead of LayerNorm;
-- Applying normalization _before_ the attention and feed-forward blocks (_pre-norm_) rather than after;
-- SwiGLU [[6]](#6) feed-forward networks instead of ReLU MLPs;
-- Untied input and output embeddings.
+---
 
-### Model sizes
+## API
 
-In `conf/model`, three model architectures are specified.
-A pre-trained checkpoint for each model size is provided in the [Releases](https://github.com/jongoiko/minigpt/releases/) page.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Chat UI |
+| `/api/health` | GET | Server and model status |
+| `/api/architecture` | GET | Model spec and pipeline steps |
+| `/api/chat` | POST | SSE streaming chat (`prompt`, `max_tokens`) |
 
-| Model name | Total parameter count | n_layers | d_model | d_ff | n_heads | n_ctx | d_vocab |
-|------------|-----------------------|----------|---------|------|---------|-------|---------|
-| 3M         | 3,413,120             | 4        | 128     | 384  | 4       | 256   | 10,000  |
-| 10M        | 9,940,224             | 6        | 256     | 704  | 4       | 256   | 10,000  |
-| 29M        | 28,924,416            | 6        | 512     | 1344 | 16      | 256   | 10,000  |
+**Example:**
 
-Training curves for each of the three model sizes are shown below.
+```bash
+curl -N -X POST http://127.0.0.1:8765/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Hello!","max_tokens":40}'
+```
 
-<p align="center">
-    <img src="media/train_loss.png" alt="Training curves for the three models trained on SimpleStories" width="60%"/>
-</p>
+---
 
-## Resources and references
+## Project Structure
 
-- [CS336 Language Modeling from Scratch (Stanford)](https://stanford-cs336.github.io/spring2025/)
-- [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) by Jay Alammar
+```
+Hessi-GPT/
+├── finetune_gpt2_chat.py   # Chat fine-tuning entry point
+├── generate.py             # CLI chat inference
+├── engine.py               # GPT-2 streaming inference engine
+├── server.py               # FastAPI + SSE server
+├── run_ui.sh               # Start the chat UI
+├── gpt2_chat/
+│   ├── config.py           # Training & generation hyperparameters
+│   ├── data.py             # Dataset loading and tokenization
+│   └── formatting.py       # Chat prompt templates
+├── web/                    # Chat UI (HTML, CSS, JS)
+└── src/minigpt/            # Original JAX transformer (training path)
+```
 
-<a id="1">[1]</a>
-Su, Jianlin, et al. "Roformer: Enhanced transformer with rotary position embedding." Neurocomputing 568 (2024): 127063.
+---
 
-<a id="2">[2]</a>
-Finke, Lennart, et al. "Parameterized Synthetic Text Generation with SimpleStories." arXiv preprint arXiv:2504.09184 (2025).
+## Skills Demonstrated
 
-<a id="3">[3]</a>
-Eldan, Ronen, and Yuanzhi Li. "Tinystories: How small can language models be and still speak coherent english?." arXiv preprint arXiv:2305.07759 (2023).
+- **LLM fine-tuning** — instruction-style chat formatting, causal LM training, checkpoint management
+- **Real-time inference** — threaded streaming generation, stop sequences, conversation state
+- **Backend engineering** — REST + SSE APIs, async request handling, model warm-up on startup
+- **Frontend UX** — streaming text rendering, live telemetry, accessible dark UI
+- **ML systems** — CPU/GPU device handling, memory-conscious deployment considerations
 
-<a id="4">[4]</a>
-Vaswani, Ashish, et al. "Attention is all you need." Advances in neural information processing systems 30 (2017).
+---
 
-<a id="5">[5]</a>
-Zhang, Biao, and Rico Sennrich. "Root mean square layer normalization." Advances in neural information processing systems 32 (2019).
+## Resume Bullet (copy-paste)
 
-<a id="6">[6]</a>
-Shazeer, Noam. "Glu variants improve transformer." arXiv preprint arXiv:2002.05202 (2020).
+> Built **Hessi-GPT**, a full-stack chat LLM app: fine-tuned GPT-2 124M on conversational data, deployed a FastAPI SSE streaming backend, and shipped a custom real-time inference UI with pipeline telemetry — Python, PyTorch, Transformers, FastAPI.
+
+---
+
+## Credits & Lineage
+
+| | |
+|---|---|
+| **Author** | [HessiKz](https://github.com/HessiKz/) |
+| **Base transformer code** | Forked and extended from [jongoiko/minigpt](https://github.com/jongoiko/minigpt) |
+| **Chat model base** | [OpenAI GPT-2](https://huggingface.co/gpt2) via Hugging Face |
+| **License** | MIT — see [LICENSE](LICENSE) |
+
+See [CREDITS.md](CREDITS.md) for full attribution.
+
+---
+
+## Roadmap
+
+- [ ] Docker + Hugging Face Spaces deployment
+- [ ] 8-bit quantization for lighter hosting
+- [ ] Larger dialog dataset for improved reply quality
+- [ ] Optional GPU inference path
+
+---
+
+**© 2025 [HessiKz](https://github.com/HessiKz/)**
