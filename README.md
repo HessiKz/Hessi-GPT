@@ -1,6 +1,6 @@
 # Hessi-GPT
 
-**A end-to-end chat language model — fine-tuning, inference, and a live streaming UI.**
+**An end-to-end chat language model — fine-tuning, inference, and a live streaming UI.**
 
 [![Author](https://img.shields.io/badge/author-HessiKz-blue)](https://github.com/HessiKz/)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
