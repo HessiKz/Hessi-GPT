@@ -195,6 +195,142 @@ function appendMessage(role, body, streaming = false) {
   return content;
 }
 
+// GPT-2.5-class CPU feel: real stream chunks, deliberately paced on screen.
+const TOKEN_PACE_MS = 110;
+const PREFILL_MS = 420;
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function extractDelta(json) {
+  return (
+    json?.choices?.[0]?.delta?.content ??
+    json?.result?.choices?.[0]?.delta?.content ??
+    ""
+  );
+}
+
+function extractFullText(json) {
+  return (
+    json?.choices?.[0]?.message?.content ??
+    json?.result?.choices?.[0]?.message?.content ??
+    ""
+  );
+}
+
+/** Split a finished reply into small pieces so fallback still "streams". */
+function chunkTextForPace(text) {
+  const pieces = [];
+  const re = /(\s+|[^\s]+)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const part = m[0];
+    if (part.length <= 4) {
+      pieces.push(part);
+    } else {
+      for (let i = 0; i < part.length; i += 2) pieces.push(part.slice(i, i + 2));
+    }
+  }
+  return pieces.length ? pieces : [text];
+}
+
+/**
+ * Live SSE reader that feeds a queue; paint loop drains it at TOKEN_PACE_MS
+ * so the UI stays streaming while feeling like a small GPT-2.5 decode.
+ */
+function createPacedStream(assistantNode, t0) {
+  const queue = [];
+  let done = false;
+  let full = "";
+  let idx = 0;
+  let wake = null;
+
+  function notify() {
+    if (wake) {
+      const r = wake;
+      wake = null;
+      r();
+    }
+  }
+
+  function push(piece) {
+    if (!piece) return;
+    queue.push(piece);
+    notify();
+  }
+
+  function finish() {
+    done = true;
+    notify();
+  }
+
+  async function waitForPiece() {
+    if (queue.length || done) return;
+    await new Promise((r) => {
+      wake = r;
+    });
+  }
+
+  async function paint() {
+    if (assistantNode.textContent === "Awaiting inference…") {
+      assistantNode.textContent = "";
+    }
+    while (!done || queue.length) {
+      await waitForPiece();
+      while (queue.length) {
+        const piece = queue.shift();
+        full += piece;
+        idx += 1;
+        assistantNode.textContent = full;
+        setText(tokenCount, pad3(idx));
+        setText(telFragment, JSON.stringify(piece));
+        setText(telContext, String(full.length));
+        const elapsed = performance.now() - t0;
+        setText(tokenLatency, `${(elapsed / Math.max(idx, 1)).toFixed(1)}MS`);
+        chatLog.scrollTop = chatLog.scrollHeight;
+        const jitter = 0.75 + Math.random() * 0.55;
+        await sleep(Math.round(TOKEN_PACE_MS * jitter));
+      }
+    }
+    return { full, idx };
+  }
+
+  return { push, finish, paint };
+}
+
+async function readSseIntoQueue(res, paced) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let gotAny = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const data = trimmed.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const json = JSON.parse(data);
+        const delta = extractDelta(json);
+        if (delta) {
+          gotAny = true;
+          paced.push(delta);
+        }
+      } catch {
+        /* ignore partial frames */
+      }
+    }
+  }
+  return gotAny;
+}
+
 async function streamChat(prompt, maxTokens) {
   if (!CFG) {
     appendMessage("assistant", "Neural core unavailable.");
@@ -204,11 +340,26 @@ async function streamChat(prompt, maxTokens) {
   const assistantNode = appendMessage("assistant", "Awaiting inference…", true);
 
   setPhase("RESTORE_CHECKPOINT", "running");
-  await new Promise((r) => setTimeout(r, 120));
+  await sleep(PREFILL_MS);
   setPhase("RESTORE_CHECKPOINT", "complete");
 
   const t0 = performance.now();
+  const messages = [
+    { role: "system", content: CFG.s },
+    ...conversation.map((m) => ({ role: m.role, content: m.content })),
+    { role: "user", content: prompt },
+  ];
+
   try {
+    setPhase("ENCODE_PROMPT", "running");
+    await sleep(180);
+    setPhase("ENCODE_PROMPT", "complete");
+    setPhase("INFER", "running");
+
+    const paced = createPacedStream(assistantNode, t0);
+    const paintPromise = paced.paint();
+
+    let gotStream = false;
     const res = await fetch(`${CFG.b}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -216,64 +367,57 @@ async function streamChat(prompt, maxTokens) {
         model: CFG.m,
         stream: true,
         max_tokens: maxTokens,
-        messages: [
-          { role: "system", content: CFG.s },
-          ...conversation.map((m) => ({ role: m.role, content: m.content })),
-          { role: "user", content: prompt },
-        ],
+        messages,
       }),
     });
 
-    if (!res.ok || !res.body) {
-      assistantNode.textContent = "Transmission failed. Check connection.";
-      assistantNode.classList.remove("streaming");
-      return;
+    if (res.ok && res.body) {
+      gotStream = await readSseIntoQueue(res, paced);
     }
 
-    setPhase("ENCODE_PROMPT", "running");
-    await new Promise((r) => setTimeout(r, 60));
-    setPhase("ENCODE_PROMPT", "complete");
-    setPhase("INFER", "running");
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let full = "";
-    let idx = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const data = trimmed.slice(5).trim();
-        if (data === "[DONE]") continue;
-        try {
-          const json = JSON.parse(data);
-          const delta = json.choices?.[0]?.delta?.content || "";
-          if (delta) {
-            full += delta;
-            assistantNode.textContent = full;
-            idx++;
-            setText(tokenCount, pad3(idx));
-            const ms = performance.now() - t0;
-            setText(tokenLatency, `${(ms / Math.max(idx, 1)).toFixed(1)}MS`);
-          }
-        } catch {
-          /* ignore partial frames */
-        }
+    // Fallback: non-stream completion, still paced onto the UI.
+    if (!gotStream) {
+      const res2 = await fetch(`${CFG.b}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: CFG.m,
+          stream: false,
+          max_tokens: maxTokens,
+          messages,
+        }),
+      });
+      if (!res2.ok) {
+        paced.finish();
+        await paintPromise;
+        assistantNode.textContent = "Transmission failed. Check connection.";
+        assistantNode.classList.remove("streaming");
+        setPhase("INFER", "idle");
+        return;
       }
+      const json = await res2.json();
+      const text = extractFullText(json);
+      if (!text) {
+        paced.finish();
+        await paintPromise;
+        assistantNode.textContent = "Empty response from neural core.";
+        assistantNode.classList.remove("streaming");
+        setPhase("INFER", "idle");
+        return;
+      }
+      for (const piece of chunkTextForPace(text)) paced.push(piece);
     }
+
+    paced.finish();
+    const { full, idx } = await paintPromise;
 
     assistantNode.classList.remove("streaming");
     setPhase("INFER", "complete");
     setPhase("EMIT_RESPONSE", "complete");
     conversation.push({ role: "user", content: prompt });
     conversation.push({ role: "assistant", content: full });
+    // Keep history short so a small model stays coherent.
+    if (conversation.length > 12) conversation = conversation.slice(-12);
     setText(tokenCount, pad3(idx));
     setText(phaseStatus, "IDLE");
   } catch (err) {
