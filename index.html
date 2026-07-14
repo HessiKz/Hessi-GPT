@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <title>HESSI-GPT / Inference Terminal</title>
+    <link rel="preconnect" href="https://fonts.bunny.net" />
+    <link
+      href="https://fonts.bunny.net/css?family=archivo-black:400|jetbrains-mono:400,500,700"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-chat">Skip to chat</a>
+
+    <div class="scanlines" aria-hidden="true"></div>
+    <div class="noise" aria-hidden="true"></div>
+
+    <div class="shell">
+      <header class="top-bar">
+        <div class="brand">
+          <p class="brand-meta">UNIT / HESSI-GPT · GPT-2.5 · STREAMING INFERENCE</p>
+          <h1 class="brand-title">HESSI-GPT</h1>
+          <p class="brand-sub">
+            GPT-2.5 decoder · written & chat-tuned by HessiKz · top-p sampling
+          </p>
+        </div>
+        <div class="status-panel" aria-live="polite">
+          <dl class="status-grid">
+            <div>
+              <dt>SYS</dt>
+              <dd id="sys-status">BOOTING…</dd>
+            </div>
+            <div>
+              <dt>PHASE</dt>
+              <dd id="phase-status">IDLE</dd>
+            </div>
+            <div>
+              <dt>TOKENS</dt>
+              <dd id="token-count">000</dd>
+            </div>
+            <div>
+              <dt>LATENCY</dt>
+              <dd id="token-latency">—</dd>
+            </div>
+          </dl>
+        </div>
+      </header>
+
+      <main class="grid-main" id="main-chat">
+        <aside class="panel panel-left" aria-labelledby="arch-heading">
+          <div class="panel-head">
+            <h2 id="arch-heading">[ ARCHITECTURE ]</h2>
+            <span class="panel-tag">REV 2.6</span>
+          </div>
+          <dl class="spec-list" id="spec-list"></dl>
+          <hr />
+          <h3 class="subhead">&gt;&gt; TRANSFORMER STACK</h3>
+          <ol class="block-list" id="block-list"></ol>
+        </aside>
+
+        <section class="panel panel-center" aria-labelledby="chat-heading">
+          <div class="panel-head">
+            <h2 id="chat-heading">[ CHAT / INFERENCE ]</h2>
+            <span class="panel-tag" id="model-tag">GPT-2.5 CHAT</span>
+          </div>
+
+          <div
+            class="chat-log"
+            id="chat-log"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions text"
+            tabindex="0"
+          ></div>
+
+          <form class="composer" id="chat-form">
+            <label class="composer-label" for="prompt-input">Prompt input</label>
+            <textarea
+              id="prompt-input"
+              name="prompt"
+              rows="3"
+              maxlength="2000"
+              autocomplete="off"
+              spellcheck="true"
+              placeholder="Say hello or ask a question…"
+              required
+            ></textarea>
+            <div class="composer-actions">
+              <label class="inline-field" for="max-tokens">
+                Max tokens
+                <input
+                  id="max-tokens"
+                  name="max_tokens"
+                  type="number"
+                  min="1"
+                  max="400"
+                  value="120"
+                  inputmode="numeric"
+                />
+              </label>
+              <button type="submit" id="send-btn">Transmit Prompt</button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="panel panel-right" aria-labelledby="pipe-heading">
+          <div class="panel-head">
+            <h2 id="pipe-heading">[ PIPELINE STATE ]</h2>
+            <span class="panel-tag">LIVE</span>
+          </div>
+          <ol class="pipeline" id="pipeline"></ol>
+          <hr />
+          <h3 class="subhead">&gt;&gt; TOKEN TELEMETRY</h3>
+          <dl class="telemetry" id="telemetry">
+            <div>
+              <dt>TOKEN ID</dt>
+              <dd id="tel-token-id">—</dd>
+            </div>
+            <div>
+              <dt>FRAGMENT</dt>
+              <dd id="tel-fragment">—</dd>
+            </div>
+            <div>
+              <dt>CONTEXT</dt>
+              <dd id="tel-context">—</dd>
+            </div>
+            <div>
+              <dt>PROMPT IDS</dt>
+              <dd id="tel-prompt-ids">—</dd>
+            </div>
+          </dl>
+        </aside>
+      </main>
+
+      <footer class="footer">
+        <p>
+          © 2025
+          <a href="https://github.com/HessiKz/" rel="noopener noreferrer">HessiKz</a>
+          · Hessi-GPT · GPT-2.5 chat model
+        </p>
+      </footer>
+    </div>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
